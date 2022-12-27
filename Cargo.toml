@@ -1,0 +1,11 @@
+[package]
+name = "op-env"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "op-env"
+path = "src/main.rs"
+
+[dependencies]
+chrono = "0.4.23"
