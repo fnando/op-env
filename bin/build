@@ -1,0 +1,36 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "bundler/inline"
+
+gemfile do
+  gem "toml-rb"
+end
+
+require "digest/sha2"
+require "toml-rb"
+require "fileutils"
+
+def build(target)
+  system("cargo build --target #{target} --release --quiet") || exit(1)
+  release_dir = "target/#{target}/release"
+  version = TomlRB.load_file(File.join(Dir.pwd, "Cargo.toml"))
+                  .dig("package", "version")
+
+  bin = target.include?("windows") ? "op-env.exe" : "op-env"
+  output_dir = "build/v#{version}"
+  output_path = "#{output_dir}/op-env-#{target}.tar.gz"
+
+  FileUtils.mkdir_p(output_dir)
+
+  system "tar -C #{release_dir} -czf #{output_path} #{bin}"
+end
+
+system("cargo clippy --quiet -- -Dwarnings -Dclippy::all -Dclippy::pedantic") || exit(1)
+
+FileUtils.rm_rf("build")
+
+build "x86_64-pc-windows-gnu"
+build "aarch64-apple-darwin"
+build "x86_64-apple-darwin"
+build "x86_64-unknown-linux-gnu"
