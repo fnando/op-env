@@ -99,8 +99,9 @@ fn output_dotenv(mut fields: Vec<&VaultField>) {
     for field in fields {
         let value: String = field.value.clone().unwrap();
         println!(
-            "{}=\"{value}\"",
-            shell_escape::escape(field.label.clone().into())
+            "{}={}",
+            shell_escape::escape(field.label.clone().into()),
+            shell_escape::escape(value.clone().into()),
         );
     }
 }
@@ -111,8 +112,9 @@ fn output_shell(mut fields: Vec<&VaultField>) {
     for field in fields {
         let value: String = field.value.clone().unwrap();
         println!(
-            "export {}=\"{value}\"",
-            shell_escape::escape(field.label.clone().into())
+            "export {}={}",
+            shell_escape::escape(field.label.clone().into()),
+            shell_escape::escape(value.clone().into()),
         );
     }
 }
