@@ -15,14 +15,6 @@ use serde_json::{to_string_pretty, Map, Value};
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-
-    /// The 1password vault that contains the secrets.
-    #[arg(short, long, default_value = "dev")]
-    vault: String,
-
-    /// The 1password item that contains the secrets.
-    #[arg(short, long, default_value = "main")]
-    item: String,
 }
 
 #[derive(Subcommand, Debug)]
@@ -32,6 +24,14 @@ enum Commands {
         /// The output format.
         #[arg(short, long, default_value = "dotenv", value_parser = clap::builder::PossibleValuesParser::new(["json", "dotenv", "shell"]))]
         format: String,
+
+        /// The 1password vault that contains the secrets.
+        #[arg(short, long, default_value = "dev")]
+        vault: String,
+
+        /// The 1password item that contains the secrets.
+        #[arg(short, long, default_value = "main")]
+        item: String,
     },
 
     /// Import secrets from a file into 1Password
@@ -39,6 +39,14 @@ enum Commands {
         /// Path to the file containing secrets
         #[arg(short, long, required = true)]
         env_file: PathBuf,
+
+        /// The 1password vault that contains the secrets.
+        #[arg(short, long, default_value = "dev")]
+        vault: String,
+
+        /// The 1password item that contains the secrets.
+        #[arg(short, long, default_value = "main")]
+        item: String,
     },
 }
 
@@ -79,8 +87,16 @@ fn run() -> Result<(), Error> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Some(Commands::Import { env_file }) => import_secrets(env_file, &cli.vault, &cli.item),
-        Some(Commands::Export { format }) => export_secrets(format, &cli.vault, &cli.item),
+        Some(Commands::Import {
+            env_file,
+            vault,
+            item,
+        }) => import_secrets(env_file, vault, item),
+        Some(Commands::Export {
+            format,
+            vault,
+            item,
+        }) => export_secrets(format, vault, item),
         None => {
             println!("No command provided. Use --help for more information.");
             Ok(())
