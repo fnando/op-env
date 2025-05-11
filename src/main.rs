@@ -1,6 +1,10 @@
+use dotenvy::from_path_iter;
+use std::collections::HashMap;
+use std::io::{self};
+use std::path::PathBuf;
 use std::process::{exit, Command};
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use serde::Deserialize;
 use serde_json::{to_string_pretty, Map, Value};
 
@@ -8,10 +12,9 @@ use serde_json::{to_string_pretty, Map, Value};
 /// to several formats. Depends on 1Password's own `op` command.
 #[derive(Parser, Debug)]
 #[command(version)]
-struct Cmd {
-    /// The output format.
-    #[arg(short, long, default_value = "dotenv", value_parser = clap::builder::PossibleValuesParser::new(["json", "dotenv", "shell"]))]
-    format: String,
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
 
     /// The 1password vault that contains the secrets.
     #[arg(short, long, default_value = "dev")]
@@ -22,6 +25,23 @@ struct Cmd {
     item: String,
 }
 
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Export secrets from 1Password
+    Export {
+        /// The output format.
+        #[arg(short, long, default_value = "dotenv", value_parser = clap::builder::PossibleValuesParser::new(["json", "dotenv", "shell"]))]
+        format: String,
+    },
+
+    /// Import secrets from a file into 1Password
+    Import {
+        /// Path to the file containing secrets
+        #[arg(short, long, required = true)]
+        env_file: PathBuf,
+    },
+}
+
 #[derive(thiserror::Error, Debug)]
 enum Error {
     #[error(transparent)]
@@ -29,6 +49,9 @@ enum Error {
 
     #[error(transparent)]
     InvalidJson(#[from] serde_json::Error),
+
+    #[error("Unable to parse dotenv file: {0}")]
+    DotenvParse(String),
 }
 
 #[derive(Deserialize, Debug)]
@@ -46,20 +69,32 @@ fn main() {
     match run() {
         Ok(()) => (),
         Err(e) => {
-            eprintln!("{e}");
+            eprintln!("ERROR: {e}");
             exit(1);
         }
     };
 }
 
 fn run() -> Result<(), Error> {
-    let cmd = Cmd::parse();
+    let cli = Cli::parse();
+
+    match &cli.command {
+        Some(Commands::Import { env_file }) => import_secrets(env_file, &cli.vault, &cli.item),
+        Some(Commands::Export { format }) => export_secrets(format, &cli.vault, &cli.item),
+        None => {
+            println!("No command provided. Use --help for more information.");
+            Ok(())
+        }
+    }
+}
+
+fn export_secrets(format: &str, vault: &str, item: &str) -> Result<(), Error> {
     let result = Command::new("op")
         .arg("item")
         .arg("get")
-        .arg(cmd.item)
+        .arg(item)
         .arg("--vault")
-        .arg(cmd.vault)
+        .arg(vault)
         .arg("--format")
         .arg("json")
         .output()?;
@@ -68,14 +103,42 @@ fn run() -> Result<(), Error> {
     let vault: Vault = serde_json::from_str(&json)?;
     let fields: Vec<&VaultField> = vault.fields.iter().filter(|i| i.value.is_some()).collect();
 
-    if cmd.format == "json" {
+    if format == "json" {
         output_json(fields)?;
-    } else if cmd.format == "dotenv" {
+    } else if format == "dotenv" {
         output_dotenv(fields);
-    } else if cmd.format == "shell" {
+    } else if format == "shell" {
         output_shell(fields);
     }
 
+    Ok(())
+}
+
+fn import_secrets(file: &PathBuf, vault: &str, item: &str) -> Result<(), Error> {
+    let env_vars: HashMap<String, String> = from_path_iter(file)
+        .map_err(|e| Error::DotenvParse(e.to_string()))?
+        .collect::<Result<HashMap<_, _>, _>>()
+        .map_err(|e| Error::DotenvParse(e.to_string()))?;
+
+    for (key, value) in env_vars {
+        let output = Command::new("op")
+            .arg("item")
+            .arg("edit")
+            .arg(item)
+            .arg("--vault")
+            .arg(vault)
+            .arg(format!("{key}={value}"))
+            .output()?;
+
+        if !output.status.success() {
+            return Err(Error::OpFailed(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to import secret: {key}"),
+            )));
+        }
+    }
+
+    println!("All secrets imported successfully!");
     Ok(())
 }
 
